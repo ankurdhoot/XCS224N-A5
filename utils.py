@@ -47,7 +47,7 @@ def pad_sents_char(sents, char_pad_token):
         # Add the padding words to the end of the sentence
         padding_word = [char_pad_token] * max_word_length
         padding_words = [padding_word] * max_len_sent
-        padding_words[:len(sent)] = 
+        padding_words[:len(sent)] = words_padded
         for w in padding_words:
             if len(w) > max_word_length:
                 print(w)
