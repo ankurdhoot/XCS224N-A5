@@ -40,6 +40,8 @@ def pad_sents_char(sents, char_pad_token):
     for sent in sents:
         words_padded = []
         for word in sent:
+            # Make sure the word doesn't exceed max_word_length
+            word = word[:max_word_length]
             # Add the padding_chars to the end of the word
             padding_chars = [char_pad_token] * max_word_length
             padding_chars[:len(word)] = word
@@ -48,9 +50,6 @@ def pad_sents_char(sents, char_pad_token):
         padding_word = [char_pad_token] * max_word_length
         padding_words = [padding_word] * max_len_sent
         padding_words[:len(sent)] = words_padded
-        for w in padding_words:
-            if len(w) > max_word_length:
-                print(w)
         sents_padded.append(padding_words)
 
 
