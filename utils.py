@@ -55,7 +55,7 @@ def pad_sents_char(sents, char_pad_token):
 
 
     ### END YOUR CODE
-    print(sents_padded)
+    # print(sents_padded)
     return sents_padded
 
 
