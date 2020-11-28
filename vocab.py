@@ -108,7 +108,26 @@ class VocabEntry(object):
             return wid
         else:
             return self[word]
-
+        
+    def getcharid(self, char):
+        """ Return the index of char in char2id, or the <unk> index
+        @param char (chr): character for which the index is returned
+        @return index (int): the index of the character
+        """
+        return self.char2id.get(char, self.char_unk)
+    
+    def word2charids(self, word):
+        """ Returns a list of the character indices in the word.
+        @param word (str): a word
+        @return ids list(int): list of character indices
+        """
+        ids = []
+        ids.append(self.start_of_word)
+        for char in word:
+            ids.append(self.getcharid(char))
+        ids.append(self.end_of_word)
+        return ids
+    
     def words2charindices(self, sents):
         """ Convert list of sentences of words into list of list of list of character indices.
         @param sents (list[list[str]]): sentence(s) in words
@@ -122,7 +141,7 @@ class VocabEntry(object):
         ###
         ###     You must prepend each word with the `start_of_word` character and append 
         ###     with the `end_of_word` character. 
-
+        return [[self.word2charids(word) for word in sent] for sent in sents]
 
         ### END YOUR CODE
 
@@ -153,7 +172,13 @@ class VocabEntry(object):
         ### TODO: 
         ###     Connect `words2charindices()` and `pad_sents_char()` which you've defined in 
         ###     previous parts
-        
+        char_indices = self.words2charindices(sents)
+        # (batch_size, max_sentence_length, max_word_length)
+        char_indices_padded = pad_sents_char(char_indices, self.char_unk)
+        char_indices_padded_var = torch.tensor(char_indices_padded, dtype=torch.long, device=device)
+        # (max_sentence_length, batch_size, max_word_length)
+        char_indices_padded_var = char_indices_padded_var.permute(1, 0, 2).contiguous()
+        return char_indices_padded_var
 
         ### END YOUR CODE
 

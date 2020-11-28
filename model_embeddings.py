@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import torch.nn as nn
+import torch
 
 
 # Do not change these imports; your module names should be
@@ -9,8 +10,8 @@ import torch.nn as nn
 #   `Highway` in the file `highway.py`
 # Uncomment the following two imports once you're ready to run part 1(f)
 
-# from cnn import CNN
-# from highway import Highway
+from cnn import CNN
+from highway import Highway
 
 # End "do not change" 
 
@@ -33,6 +34,14 @@ class ModelEmbeddings(nn.Module):
         ## End A4 code
 
         ### YOUR CODE HERE for part 1f
+        # Embedding dimensionality for characters
+        self.embed_size = embed_size
+        self.e_char = 50
+        self.e_word = embed_size
+        self.dropout_prob = 0.3
+        self.embedding = nn.Embedding(num_embeddings=len(vocab.char2id), embedding_dim=self.e_char, padding_idx=vocab.getcharid('<pad>'))
+        self.cnn = CNN(self.e_char, self.e_word)
+        self.highway = Highway(self.e_word)
 
         ### END YOUR CODE
 
@@ -51,5 +60,17 @@ class ModelEmbeddings(nn.Module):
         ## End A4 code
 
         ### YOUR CODE HERE for part 1f
+        # (sentence_length, batch_size, m_word) --> (sentence_length, batch_size, m_word, e_char)
+        char_embeddings = self.embedding(input_tensor)
+        # (sentence_length, batch_size, e_char, m_word)
+        x_conv_in = char_embeddings.permute(0, 1, 3, 2)
+        # (sentence_length, batch_size, e_word)
+        x_conv_out = torch.stack([self.cnn(x_conv_in_batch) for x_conv_in_batch in x_conv_in], dim=0)
+        # (sentence_length, batch_size, e_word)
+        x_highway_in = x_conv_out
+        # (sentence_length, batch_size, e_word) 
+        x_highway_out = self.highway(x_highway_in)
+        # (sentence_length, batch_size, e_word)
+        return nn.functional.dropout(x_highway_out, p=self.dropout_prob)
 
         ### END YOUR CODE

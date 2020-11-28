@@ -23,7 +23,16 @@ class CharDecoder(nn.Module):
         ### Hint: - Use target_vocab.char2id to access the character vocabulary for the target language.
         ###       - Set the padding_idx argument of the embedding matrix.
         ###       - Create a new Embedding layer. Do not reuse embeddings created in Part 1 of this assignment.
+        super(CharDecoder, self).__init__()
         
+        # TODO(ankur): How many layers do we want for the LSTM?
+        self.target_vocab = target_vocab
+        self.v_char = len(target_vocab.char2id)
+        self.charDecoder = nn.LSTM(input_size=char_embedding_size, hidden_size=hidden_size, num_layers=1, bidirectional=False)
+        self.char_output_projection = nn.Linear(in_features=hidden_size, out_features=self.v_char, bias=True)
+        self.char_padding_idx = target_vocab.char2id['<pad>']
+        self.decoderCharEmb = nn.Embedding(num_embeddings=self.v_char, embedding_dim=char_embedding_size, padding_idx=self.char_padding_idx)
+    
 
         ### END YOUR CODE
 
@@ -40,7 +49,15 @@ class CharDecoder(nn.Module):
         """
         ### YOUR CODE HERE for part 2b
         ### TODO - Implement the forward pass of the character decoder.
-        
+        # TODO(ankur): Need to use pack_padded_sequence here?
+        # (length, batch, char_embedding_size)
+        char_embeddings = self.decoderCharEmb(input)
+        # (length, batch, h), ((1, batch, h), (1, batch, h))
+        output, (h_n, c_n) = self.charDecoder(char_embeddings, dec_hidden)
+        # (length, batch, V_char)
+        s = self.char_output_projection(output)
+        print("Training forward")
+        return s, (h_n, c_n)
         
         ### END YOUR CODE 
 
@@ -58,7 +75,37 @@ class CharDecoder(nn.Module):
         ###
         ### Hint: - Make sure padding characters do not contribute to the cross-entropy loss.
         ###       - char_sequence corresponds to the sequence x_1 ... x_{n+1} from the handout (e.g., <START>,m,u,s,i,c,<END>).
+        
+        # (length, batch)
+        char_sequence = char_sequence.contiguous()
+        # (length - 1, batch)
+        char_sequence_input = char_sequence[:-1]
+        # (length - 1, batch, char_embedding_size)
+        char_embeddings_input = self.decoderCharEmb(char_sequence_input)
+        # ((length - 1) * batch)
+        char_sequence_output = char_sequence[1:].view(-1)      
+        
+        # (length - 1, batch, h), ((1, batch, h), (1, batch, h))
+        output, (h_n, c_n) = self.charDecoder(char_embeddings_input, dec_hidden)
+        # (length - 1, batch, V_char)
+        s = self.char_output_projection(output)
+        
+        # ((length - 1) * batch)
+        loss = nn.functional.cross_entropy(input = s.view(-1, self.v_char), target = char_sequence_output, reduction='none')
 
+        
+        # ((length - 1) * batch), contains a 1 in the non-padding entries
+        target_masks = (char_sequence_output != self.char_padding_idx).float()
+        
+        # ((length - 1) * batch)
+        loss = loss * target_masks
+        
+        # scalar
+        loss = loss.sum()
+        
+        return loss
+        
+        
 
         ### END YOUR CODE
 
@@ -80,6 +127,60 @@ class CharDecoder(nn.Module):
         ###      - We use curly brackets as start-of-word and end-of-word characters. That is, use the character '{' for <START> and '}' for <END>.
         ###        Their indices are self.target_vocab.start_of_word and self.target_vocab.end_of_word, respectively.
         
+        start_char = '{'
+        start_char_idx = self.target_vocab.char2id[start_char]
+        end_char = '}'
+        end_char_idx = self.target_vocab.char2id[end_char]
+        
+        # (1, batch, hidden_size), (1, batch, hidden_size)
+        h_t, c_t = initialStates
+        
+        batch_size = h_t.size()[1]
+        
+        # List of lists, each inner list is a list of characters that make up the word.
+        output_words = [[] for i in range(batch_size)]
+        # (batch_size, )
+        last_char_idx = torch.tensor([start_char_idx] * batch_size, device=device)
+        # (batch_size, char_embedding_size)
+        last_char_embeddings = self.decoderCharEmb(last_char_idx)
+        # (1, batch_size, char_embedding_size)
+        last_char_embeddings = torch.unsqueeze(last_char_embeddings, dim=0)
+        
+        
+        for t in range(max_length):
+            
+            # (1, batch, hidden_size), (1, batch, hidden_size), (1, batch, hidden_size)
+            output, (h_t, c_t) = self.charDecoder(last_char_embeddings, (h_t, c_t))
+            # (1, batch, v_char)
+            s_t = self.char_output_projection(h_t)
+            # (batch, v_char)
+            s_t = torch.squeeze(s_t, dim=0)
+            # (batch, )
+            predicted_char_idx = torch.argmax(s_t, dim=1)
+            # (batch, )
+            predicted_chars = [self.target_vocab.id2char[char_id.item()] for char_id in predicted_char_idx]
+            
+            for index, char in enumerate(predicted_chars):
+                output_words[index].append(char)
+                
+            # (batch_size, )
+            last_char_idx = predicted_char_idx
+            # (batch_size, char_embedding_size)
+            last_char_embeddings = self.decoderCharEmb(last_char_idx)
+            # (1, batch_size, char_embedding_size)
+            last_char_embeddings = torch.unsqueeze(last_char_embeddings, dim=0)
+            
+            
+        # Join and truncate. 
+        output_words_str = []
+        for word_chars in output_words:
+            if end_char in word_chars:
+                end_char_id = word_chars.index(end_char)
+                # Don't include anything from the end character onwards.
+                word_chars = word_chars[:end_char_id]
+            # Concatenate all the characters to form the word
+            output_words_str.append(''.join(word_chars))
+        return output_words_str
         
         ### END YOUR CODE
 

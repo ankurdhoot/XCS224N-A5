@@ -7,6 +7,8 @@ sanity_check.py: sanity checks for assignment 5
 Usage:
     sanity_check.py 1a
     sanity_check.py 1b
+    sanity_check.py 1d
+    sanity_check.py 1e
     sanity_check.py 1f
     sanity_check.py 2a
     sanity_check.py 2b
@@ -19,6 +21,7 @@ import sys
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.utils
 from docopt import docopt
 
@@ -26,6 +29,8 @@ from char_decoder import CharDecoder
 from nmt_model import NMT
 from utils import pad_sents_char
 from vocab import Vocab, VocabEntry
+from highway import Highway
+from cnn import CNN
 
 # ----------
 # CONSTANTS
@@ -39,6 +44,7 @@ DROPOUT_RATE = 0.0
 class DummyVocab():
     def __init__(self):
         self.char2id = json.load(open('./sanity_check_en_es_data/char_vocab_sanity_check.json', 'r'))
+        print(self.char2id)
         self.id2char = {id: char for char, id in self.char2id.items()}
         self.char_unk = self.char2id['<unk>']
         self.start_of_word = self.char2id["{"]
@@ -94,13 +100,64 @@ def question_1b_sanity_check():
 
     padded_sentences = pad_sents_char(word_ids, 0)
     gold_padded_sentences = torch.load('./sanity_check_en_es_data/gold_padded_sentences.pkl')
+    print(padded_sentences)
+    print(gold_padded_sentences)
     assert padded_sentences == gold_padded_sentences, "Sentence padding is incorrect: it should be:\n {} but is:\n{}".format(
         gold_padded_sentences, padded_sentences)
 
     print("Sanity Check Passed for Question 1b: Padding!")
     print("-" * 80)
 
+@torch.no_grad()
+def init_weights(m):
+    if (type(m)) == nn.Linear:
+        m.weight.fill_(0.25)
+        if m.bias is not None:
+            m.bias.fill_(0.5)
+    elif type(m) == nn.Embedding:
+            m.weight.data.fill_(1.0)
+        
+def question_1d_sanity_check():
+    """ Sanity check for Highway network.
+    """
+    print("-" * 80)
+    print("Running Sanity Check for Question 1d : Highway")
+    batch_size = 3
+    e_word = 2
+    highway = Highway(2)
+    highway.apply(init_weights)
+    x_conv_out = torch.tensor([[1., 2.], [2., 3.], [3., 4.]])
+    x_highway = highway(x_conv_out)
+    expected = torch.tensor([[1.1943, 1.4170],
+                             [1.7870, 1.9351],
+                             [2.3215, 2.4169]])
+    
+    assert np.allclose(expected.numpy(), x_highway.detach().numpy(), rtol=0.01, atol=0.01)
+    print("Sanity Check Passed for Question 1d: Highway!")
+    print("-" * 80)
+    
+def question_1e_sanity_check():
+    """ Sanity check for convolutional network.
+    """
+    print("-" * 80)
+    print("Running Sanity Check for Question 1e : Convolutional")
+    
+    batch_size = 5
+    e_char = 10
+    e_word = 20
+    m_word = 31
+    kernel_size = 5
+    cnn = CNN(e_char=e_char, e_word=e_word, kernel_size=kernel_size)
+    x_in = torch.rand(batch_size, e_char, m_word)
+    x_conv_out = cnn(x_in)
 
+    assert x_conv_out.size()[0] == batch_size, "dim 0 of output shape is incorrect"
+    assert x_conv_out.size()[1] == e_word, "dim 1 of output shape is incorrect"
+    
+    print("Sanity Check Passed for Question 1e: Convolutional!")
+    print("-" * 80)
+    
+    
 def question_1f_sanity_check(model):
     """ Sanity check for model_embeddings.py
         basic shape check
@@ -189,6 +246,49 @@ def question_2c_sanity_check(decoder):
     print("Sanity Check Passed for Question 2c: CharDecoder.train_forward()!")
     print("-" * 80)
 
+def question_2c_sanity_check_strict():
+    
+    char_vocab = DummyVocab()
+    
+    # Initialize CharDecoder
+    decoder = CharDecoder(
+        hidden_size=HIDDEN_SIZE,        # 5
+        char_embedding_size=EMBED_SIZE, # 3
+        target_vocab=char_vocab)
+    
+    # decoder.apply(init_weights)
+    print(decoder)
+    
+    padding = '<pad>'
+    padding_idx = char_vocab.char2id[padding]
+    start = '{'
+    start_idx = char_vocab.char2id[start]
+    end = '}'
+    end_idx = char_vocab.char2id[end]
+    word1 = 'hello'
+    word2 = 'mom'
+    
+    word1_char_ids = []
+    word1_char_ids.append(start_idx)
+    for char in word1:
+        word1_char_ids.append(char_vocab.char2id[char])
+    word1_char_ids.append(end_idx)
+    
+    word2_char_ids = []
+    word2_char_ids.append(start_idx)
+    for char in word2:
+        word2_char_ids.append(char_vocab.char2id[char])
+    
+    word2_char_ids.append(end_idx)
+    word2_char_ids.append(char_vocab.char2id[padding])
+    word2_char_ids.append(char_vocab.char2id[padding])
+    
+    inpt = torch.tensor([word1_char_ids, word2_char_ids]).t()
+    
+    loss = decoder.train_forward(inpt)
+    print(loss)
+    
+    
 
 def question_2d_sanity_check(decoder):
     """ Sanity check for CharDecoder.decode_greedy()
@@ -198,10 +298,12 @@ def question_2d_sanity_check(decoder):
     print("Running Sanity Check for Question 2d: CharDecoder.decode_greedy()")
     print("-" * 80)
     sequence_length = 4
-    inpt = torch.zeros(1, BATCH_SIZE, HIDDEN_SIZE, dtype=torch.float)
+    inpt = torch.rand(1, BATCH_SIZE, HIDDEN_SIZE, dtype=torch.float)
     initialStates = (inpt, inpt)
     device = decoder.char_output_projection.weight.device
     decodedWords = decoder.decode_greedy(initialStates, device)
+    print(decodedWords)
+    print(len(decodedWords[0]))
     assert (len(decodedWords) == BATCH_SIZE), "Length of decodedWords should be {} but is: {}".format(BATCH_SIZE,
                                                                                                       len(decodedWords))
     print("Sanity Check Passed for Question 2d: CharDecoder.decode_greedy()!")
@@ -246,6 +348,10 @@ def main():
         question_1a_sanity_check()
     elif args['1b']:
         question_1b_sanity_check()
+    elif args['1d']:
+        question_1d_sanity_check()
+    elif args['1e']:
+        question_1e_sanity_check()
     elif args['1f']:
         question_1f_sanity_check(model)
     elif args['2a']:
@@ -254,6 +360,7 @@ def main():
         question_2b_sanity_check(decoder, char_vocab)
     elif args['2c']:
         question_2c_sanity_check(decoder)
+        question_2c_sanity_check_strict()
     elif args['2d']:
         question_2d_sanity_check(decoder)
     else:

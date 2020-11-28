@@ -74,11 +74,13 @@ class NMT(nn.Module):
 
         ## A4 code
         # source_padded = self.vocab.src.to_input_tensor(source, device=self.device)   # Tensor: (src_len, b)
-        # target_padded = self.vocab.tgt.to_input_tensor(target, device=self.device)   # Tensor: (tgt_len, b)
+        source_padded_chars = self.vocab.src.to_input_tensor_char(source, device=self.device)
+        target_padded = self.vocab.tgt.to_input_tensor(target, device=self.device)   # Tensor: (tgt_len, b)
+        target_padded_chars = self.vocab.tgt.to_input_tensor_char(target, device=self.device) # Tensor (tgt_len, b, max_word_length)
  
-        # enc_hiddens, dec_init_state = self.encode(source_padded, source_lengths)
-        # enc_masks = self.generate_sent_masks(enc_hiddens, source_lengths)
-        # combined_outputs = self.decode(enc_hiddens, enc_masks, dec_init_state, target_padded)
+        enc_hiddens, dec_init_state = self.encode(source_padded_chars, source_lengths)
+        enc_masks = self.generate_sent_masks(enc_hiddens, source_lengths)
+        combined_outputs = self.decode(enc_hiddens, enc_masks, dec_init_state, target_padded_chars)
         ## End A4 code
         
         ### YOUR CODE HERE for part 1g
@@ -106,14 +108,18 @@ class NMT(nn.Module):
 
         if self.charDecoder is not None:
             max_word_len = target_padded_chars.shape[-1]
-
+            
+            # (tgt_len * b)
             target_words = target_padded[1:].contiguous().view(-1)
+            # (tgt_len * b, max_word_length)
             target_chars = target_padded_chars[1:].view(-1, max_word_len)
+            # (tgt_len * b, h)
             target_outputs = combined_outputs.view(-1, 256)
     
             target_chars_oov = target_chars #torch.index_select(target_chars, dim=0, index=oovIndices)
             rnn_states_oov = target_outputs #torch.index_select(target_outputs, dim=0, index=oovIndices)
             oovs_losses = self.charDecoder.train_forward(target_chars_oov.t(), (rnn_states_oov.unsqueeze(0), rnn_states_oov.unsqueeze(0)))
+            # print(oovs_losses)
             scores = scores - oovs_losses
     
         return scores
@@ -336,6 +342,8 @@ class NMT(nn.Module):
                 if hyp_word == '</s>':
                     completed_hypotheses.append(Hypothesis(value=new_hyp_sent[1:-1],
                                                            score=cand_new_hyp_score))
+                    # print(new_hyp_sent)
+                    # print(cand_new_hyp_score)
                 else:
                     new_hypotheses.append(new_hyp_sent)
                     live_hyp_ids.append(prev_hyp_id)
@@ -344,10 +352,14 @@ class NMT(nn.Module):
             if len(decoderStatesForUNKsHere) > 0 and self.charDecoder is not None: # decode UNKs
                 decoderStatesForUNKsHere = torch.stack(decoderStatesForUNKsHere, dim=0)
                 decodedWords = self.charDecoder.decode_greedy((decoderStatesForUNKsHere.unsqueeze(0), decoderStatesForUNKsHere.unsqueeze(0)), max_length=21, device=self.device)
+                # print("Decoded words:")
+                # print(decodedWords)
                 assert len(decodedWords) == decoderStatesForUNKsHere.size()[0], "Incorrect number of decoded words" 
                 for hyp in new_hypotheses:
                   if hyp[-1].startswith("<unk>"):
+                        # print(hyp)
                         hyp[-1] = decodedWords[int(hyp[-1][5:])]#[:-1]
+                        # print(hyp)
 
             if len(completed_hypotheses) == beam_size:
                 break
@@ -355,8 +367,11 @@ class NMT(nn.Module):
             live_hyp_ids = torch.tensor(live_hyp_ids, dtype=torch.long, device=self.device)
             h_tm1 = (h_t[live_hyp_ids], cell_t[live_hyp_ids])
             att_tm1 = att_t[live_hyp_ids]
-
+            
+            # print("New Hypotheses");
+            # print(new_hypotheses)
             hypotheses = new_hypotheses
+            # print(hypotheses)
             hyp_scores = torch.tensor(new_hyp_scores, dtype=torch.float, device=self.device)
 
         if len(completed_hypotheses) == 0:
@@ -364,6 +379,9 @@ class NMT(nn.Module):
                                                    score=hyp_scores[0].item()))
 
         completed_hypotheses.sort(key=lambda hyp: hyp.score, reverse=True)
+        # for hypothesis in completed_hypotheses:
+            # print(hypothesis)
+        # print(completed_hypotheses)
         return completed_hypotheses
 
     @property
