@@ -39,9 +39,10 @@ class ModelEmbeddings(nn.Module):
         self.e_char = 50
         self.e_word = embed_size
         self.dropout_prob = 0.3
-        self.embedding = nn.Embedding(num_embeddings=len(vocab.char2id), embedding_dim=self.e_char, padding_idx=vocab.getcharid('<pad>'))
+        self.embedding = nn.Embedding(num_embeddings=len(vocab.char2id), embedding_dim=self.e_char, padding_idx=vocab.char2id['<pad>'])
         self.cnn = CNN(self.e_char, self.e_word)
         self.highway = Highway(self.e_word)
+        self.dropout = nn.Dropout(p=self.dropout_prob)
 
         ### END YOUR CODE
 
@@ -71,6 +72,6 @@ class ModelEmbeddings(nn.Module):
         # (sentence_length, batch_size, e_word) 
         x_highway_out = self.highway(x_highway_in)
         # (sentence_length, batch_size, e_word)
-        return nn.functional.dropout(x_highway_out, p=self.dropout_prob)
+        return self.dropout(x_highway_out)
 
         ### END YOUR CODE
