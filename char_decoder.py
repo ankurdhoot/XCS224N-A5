@@ -93,7 +93,8 @@ class CharDecoder(nn.Module):
         # ((length - 1) * batch)
         loss = nn.functional.cross_entropy(input = s.view(-1, self.v_char), target = char_sequence_output, reduction='none')
 
-        
+
+        # TODO(ankur): Use ignore_index instead.        
         # ((length - 1) * batch), contains a 1 in the non-padding entries
         target_masks = (char_sequence_output != self.char_padding_idx).float()
         
